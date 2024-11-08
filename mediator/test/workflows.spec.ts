@@ -117,27 +117,24 @@ describe('Workflows', () => {
       const checkMediatorResponse = await request(FHIR.url)
         .get('/mediator/')
         .auth(FHIR.username, FHIR.password);
-
       expect(checkMediatorResponse.status).toBe(200);
       expect(checkMediatorResponse.body.status).toBe('success');
 
-      const patient = PatientFactory.build({}, { name: 'OpenMRS patient', placeId: placeId });
+      const patient = PatientFactory.build({name: 'OpenMRS Patient', phone: '+2548277217095'}, { placeId: placeId });
 
       const createPatientResponse = await request(CHT.url)
         .post('/api/v1/people')
         .auth(chwUserName, chwPassword)
         .send(patient);
-
       expect(createPatientResponse.status).toBe(200);
       expect(createPatientResponse.body.ok).toEqual(true);
       patientId = createPatientResponse.body.id;
 
-      await new Promise((r) => setTimeout(r, 5000));
+      await new Promise((r) => setTimeout(r, 10000));
 
       const retrieveFhirPatientIdResponse = await request(FHIR.url)
         .get('/fhir/Patient/?identifier=' + patientId)
         .auth(FHIR.username, FHIR.password);
-
       expect(retrieveFhirPatientIdResponse.status).toBe(200);
       expect(retrieveFhirPatientIdResponse.body.total).toBe(1);
 
@@ -145,21 +142,45 @@ describe('Workflows', () => {
         .get('/mediator/openmrs/sync')
         .auth(FHIR.username, FHIR.password)
         .send();
-
       expect(triggerOpenMrsSyncPatientResponse.status).toBe(200);
 
-      await new Promise((r) => setTimeout(r, 5000));
+      await new Promise((r) => setTimeout(r, 10000));
 
       const retrieveOpenMrsPatientIdResponse = await request(OPENMRS.url)
         .get('/Patient/?identifier=' + patientId)
         .auth(OPENMRS.username, OPENMRS.password);
-
       expect(retrieveOpenMrsPatientIdResponse.status).toBe(200);
-      //this should work after fixing openmrs to have latest fhir omod and cht identifier defined.
       expect(retrieveOpenMrsPatientIdResponse.body.total).toBe(1);
 
-      //Validate HAPI updated ids
+      const openMrsPatientId = retrieveOpenMrsPatientIdResponse.body.entry[0].resource.id;
+      console.log('openMrsPatientId: ' + openMrsPatientId);
+      const retrieveUpdatedFhirPatientResponse = await request(FHIR.url)
+      .get(`/fhir/Patient/${patientId}`)
+      .auth(FHIR.username, FHIR.password);
+      console.log('retrieveUpdatedFhirPatientResponse.body:');
+      console.log(JSON.stringify(retrieveUpdatedFhirPatientResponse.body));
+      expect(retrieveUpdatedFhirPatientResponse.status).toBe(200);
+      expect(retrieveUpdatedFhirPatientResponse.body.identifier).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+          value: openMrsPatientId,
+          })
+        ])
+      );
 
+      const searchOpenMrsPatientResponse = await request(OPENMRS.url)
+        .get(`/Patient/?given=OpenMRS&family=Patient`)
+        .auth(OPENMRS.username, OPENMRS.password);
+      expect(searchOpenMrsPatientResponse.status).toBe(200);
+      expect(searchOpenMrsPatientResponse.body.total).toBe(1);
+      expect(searchOpenMrsPatientResponse.body.entry[0].resource.id).toBe(openMrsPatientId);
+
+      const searchOpenMrsPatientbyPhoneResponse = await request(OPENMRS.url)
+        .get(`/Patient/?telecom.value=+2548277217095`)
+        .auth(OPENMRS.username, OPENMRS.password);
+      expect(searchOpenMrsPatientbyPhoneResponse.status).toBe(200);
+      expect(searchOpenMrsPatientbyPhoneResponse.body.total).toBe(1);
+      expect(searchOpenMrsPatientbyPhoneResponse.body.entry[0].resource.id).toBe(openMrsPatientId);
     });
 
     //skipping this test because is incomplete.
