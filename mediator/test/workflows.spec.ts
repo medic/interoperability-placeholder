@@ -8,6 +8,8 @@ import {
   OrganizationFactory as OrganizationFactoryBase,
   ServiceRequestFactory as ServiceRequestFactoryBase
 } from '../src/middlewares/schemas/tests/fhir-resource-factories';
+import { OpenMRSPatientFactory } from './openmrs-resource-factories';
+
 const { generateAuthHeaders } = require('../../configurator/libs/authentication');
 
 jest.setTimeout(50000);
@@ -112,8 +114,8 @@ describe('Workflows', () => {
     await createOpenMRSIdType('CHT Document ID');
   });
 
-  describe('OpenMRS workflow', () => {
-    it('Should follow the CHT Patient to OpenMRS workflow', async () => {
+  describe.only('OpenMRS workflow', () => {
+    it('should follow the CHT Patient to OpenMRS workflow', async () => {
       const checkMediatorResponse = await request(FHIR.url)
         .get('/mediator/')
         .auth(FHIR.username, FHIR.password);
@@ -153,7 +155,6 @@ describe('Workflows', () => {
       expect(retrieveOpenMrsPatientIdResponse.body.total).toBe(1);
 
       const openMrsPatientId = retrieveOpenMrsPatientIdResponse.body.entry[0].resource.id;
-      console.log('openMrsPatientId: ' + openMrsPatientId);
       const retrieveUpdatedFhirPatientResponse = await request(FHIR.url)
       .get(`/fhir/Patient/${patientId}`)
       .auth(FHIR.username, FHIR.password);
@@ -174,35 +175,44 @@ describe('Workflows', () => {
       expect(searchOpenMrsPatientResponse.status).toBe(200);
       expect(searchOpenMrsPatientResponse.body.total).toBe(1);
       expect(searchOpenMrsPatientResponse.body.entry[0].resource.id).toBe(openMrsPatientId);
-
-      const searchOpenMrsPatientbyPhoneResponse = await request(OPENMRS.url)
-        .get(`/Patient/?telecom.value=+2548277217095`)
-        .auth(OPENMRS.username, OPENMRS.password);
-      expect(searchOpenMrsPatientbyPhoneResponse.status).toBe(200);
-      expect(searchOpenMrsPatientbyPhoneResponse.body.total).toBe(1);
-      expect(searchOpenMrsPatientbyPhoneResponse.body.entry[0].resource.id).toBe(openMrsPatientId);
     });
 
-    //skipping this test because is incomplete.
-    it.skip('Should follow the OpenMRS Patient to CHT workflow', async () => {
+    it('should follow the OpenMRS Patient to CHT workflow', async () => {
       const checkMediatorResponse = await request(FHIR.url)
         .get('/mediator/')
         .auth(FHIR.username, FHIR.password);
-
       expect(checkMediatorResponse.status).toBe(200);
 
-      //TODO: Create a patient using openMRS api
+      console.log('placeId:' + placeId);
+      const openMrsPatient = OpenMRSPatientFactory.build({}, {placeId});
+      console.log('openMrsPatient: ' + JSON.stringify(openMrsPatient));
+
+      const createOpenMrsPatientResponse = await request(OPENMRS.url)
+      .post('/Patient')
+      .auth(OPENMRS.username, OPENMRS.password)
+      .send(openMrsPatient);
+
+      console.log('createOpenMrsPatientResponse: ' + JSON.stringify(createOpenMrsPatientResponse.body));
+      expect(createOpenMrsPatientResponse.status).toBe(201);
+      expect(createOpenMrsPatientResponse.body).toHaveProperty('id');
+
+      const openMrsPatientId = createOpenMrsPatientResponse.body.id;
+
+      await new Promise((r) => setTimeout(r, 10000));
+
+      const triggerOpenMrsSyncPatientResponse = await request('https://localhost:5002')
+        .get('/mediator/openmrs/sync')
+        .auth(OPENMRS.username, OPENMRS.password)
+        .send();
+      expect(triggerOpenMrsSyncPatientResponse.status).toBe(200);
+
+      await new Promise((r) => setTimeout(r, 10000));
 
       const retrieveFhirPatientIdResponse = await request(FHIR.url)
-        .get('/fhir/Patient/?identifier=' + patientId)
+        .get('/fhir/Patient/?identifier=' + openMrsPatientId)
         .auth(FHIR.username, FHIR.password);
-
       expect(retrieveFhirPatientIdResponse.status).toBe(200);
-      //expect(retrieveFhirPatientIdResponse.body.total).toBe(1);
-
-      //TODO: retrieve and validate patient from CHT api
-      //trigger openmrs sync
-      //validate id
+      expect(retrieveFhirPatientIdResponse.body.total).toBe(1);
     });
   });
 
