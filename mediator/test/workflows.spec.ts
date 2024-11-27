@@ -114,7 +114,7 @@ describe('Workflows', () => {
     await createOpenMRSIdType('CHT Document ID');
   });
 
-  describe.only('OpenMRS workflow', () => {
+  describe('OpenMRS workflow', () => {
     it('should follow the CHT Patient to OpenMRS workflow', async () => {
       const checkMediatorResponse = await request(FHIR.url)
         .get('/mediator/')
@@ -158,8 +158,6 @@ describe('Workflows', () => {
       const retrieveUpdatedFhirPatientResponse = await request(FHIR.url)
       .get(`/fhir/Patient/${patientId}`)
       .auth(FHIR.username, FHIR.password);
-      console.log('retrieveUpdatedFhirPatientResponse.body:');
-      console.log(JSON.stringify(retrieveUpdatedFhirPatientResponse.body));
       expect(retrieveUpdatedFhirPatientResponse.status).toBe(200);
       expect(retrieveUpdatedFhirPatientResponse.body.identifier).toEqual(
         expect.arrayContaining([
@@ -183,16 +181,13 @@ describe('Workflows', () => {
         .auth(FHIR.username, FHIR.password);
       expect(checkMediatorResponse.status).toBe(200);
 
-      console.log('placeId:' + placeId);
       const openMrsPatient = OpenMRSPatientFactory.build({}, {placeId});
-      console.log('openMrsPatient: ' + JSON.stringify(openMrsPatient));
 
       const createOpenMrsPatientResponse = await request(OPENMRS.url)
       .post('/Patient')
       .auth(OPENMRS.username, OPENMRS.password)
       .send(openMrsPatient);
 
-      console.log('createOpenMrsPatientResponse: ' + JSON.stringify(createOpenMrsPatientResponse.body));
       expect(createOpenMrsPatientResponse.status).toBe(201);
       expect(createOpenMrsPatientResponse.body).toHaveProperty('id');
 
@@ -213,8 +208,14 @@ describe('Workflows', () => {
         .auth(FHIR.username, FHIR.password);
       expect(retrieveFhirPatientIdResponse.status).toBe(200);
       expect(retrieveFhirPatientIdResponse.body.total).toBe(1);
+
+      const chtPatientId = retrieveFhirPatientIdResponse.body.entry[0].resource.identifier[1].value;
+
+      const retrieveChtPatientResponse = await request(CHT.url)
+        .get('/api/v1/person/' + chtPatientId)
+        .auth(CHT.username, CHT.password);
+      expect(retrieveChtPatientResponse.status).toBe(200);
     });
-  });
 
   describe('Loss To Follow-Up (LTFU) workflow', () => {
     let encounterUrl: string;
