@@ -1,11 +1,11 @@
 import { randomUUID } from 'crypto';
 import { Factory } from 'rosie';
 
-const PlaceFactory = Factory.define('place')
+export const PlaceFactory = Factory.define('place')
   .option('placeId', randomUUID())
   .attr('name', 'CHP Branch One')
   .attr('type', 'district_hospital')
-  .attr('parent', ['placeId'], function (placeId) {
+  .attr('placeId', ['placeId'], function (placeId) {
     return placeId;
   });
 
@@ -14,19 +14,23 @@ const ContactFactory = Factory.define('contact')
   .attr('phone', '+2868917046');
 
 export const UserFactory = Factory.define('user')
-  .option('placeId')
+  .option('parentPlace')
   .attr('password', 'Dakar1234')
   .attr('username', 'maria')
   .attr('type', 'chw')
-  .attr('place', ['placeId'], function (placeId) {
-    return PlaceFactory.build({}, { placeId });
+  .attr('place', ['parentPlace'], function (parentPlace) {
+    return {
+      "name": "Mary's Area",
+      "type": "health_center",
+      "parent": parentPlace
+    };
   })
   .attr('contact', function () {
     return ContactFactory.build();
   });
 
 export const PatientFactory = Factory.define('patient')
-  .option('placeId')
+  .option('place')
   .attr('name', 'John Test')
   .attr('phone', '+2548277217095')
   .attr('date_of_birth', '1980-06-06')
@@ -34,8 +38,8 @@ export const PatientFactory = Factory.define('patient')
   .attr('type', 'person')
   .attr('role', 'patient')
   .attr('contact_type', 'patient')
-  .attr('place', ['placeId'], function (placeId) {
-    return placeId;
+  .attr('place', ['place'], function (place) {
+    return place;
   });
 
 const DocsFieldsFactory = Factory.define('fields')

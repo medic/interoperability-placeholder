@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { OPENHIM, CHT, FHIR, OPENMRS } from '../config';
 import {
-  UserFactory, PatientFactory, TaskReportFactory
+  UserFactory, PatientFactory, TaskReportFactory, PlaceFactory
 } from './cht-resource-factories';
 import {
   EndpointFactory as EndpointFactoryBase,
@@ -70,26 +70,28 @@ const createOpenMRSIdType = async (name: string) => {
   }
 };
 
-let placeId: string;
+const parentPlace = PlaceFactory.build();
 let chwUserName: string;
 let chwPassword: string;
 let contactId: string;
 let patientId: string;
+let parentPlaceId: string;
+let placeId: string;
+
 
 const configureCHT = async () => {
   const createPlaceResponse = await request(CHT.url)
     .post('/api/v1/places')
     .auth(CHT.username, CHT.password)
-    .send({ 'name': 'CHP Branch Two', 'type': 'district_hospital' });
+    .send(parentPlace);
 
   if (createPlaceResponse.status === 200 && createPlaceResponse.body.ok === true) {
-    placeId = createPlaceResponse.body.id;
+    parentPlaceId = createPlaceResponse.body.id;
   } else {
     throw new Error(`CHT place creation failed: Reason ${createPlaceResponse.status}`);
   }
 
-  const user = UserFactory.build({}, { placeId: placeId });
-
+  const user = UserFactory.build({}, { parentPlace: parentPlaceId });
   chwUserName = user.username;
   chwPassword = user.password;
 
@@ -101,6 +103,15 @@ const configureCHT = async () => {
     contactId = createUserResponse.body.contact.id;
   } else {
     throw new Error(`CHT user creation failed: Reason ${createUserResponse.status}`);
+  }
+
+  const retrieveChtHealthCenterResponse = await request(CHT.url)
+        .get('/api/v2/users/maria')
+        .auth(CHT.username, CHT.password);
+  if (retrieveChtHealthCenterResponse.status === 200) {
+    placeId = retrieveChtHealthCenterResponse.body.place[0]._id;
+  } else {
+    throw new Error(`CHT health center retrieval failed: Reason ${retrieveChtHealthCenterResponse.status}`);
   }
 };
 
@@ -122,12 +133,13 @@ describe('Workflows', () => {
       expect(checkMediatorResponse.status).toBe(200);
       expect(checkMediatorResponse.body.status).toBe('success');
 
-      const patient = PatientFactory.build({name: 'OpenMRS Patient', phone: '+2548277217095'}, { placeId: placeId });
+      const patient = PatientFactory.build({name: 'CHTOpenMRS Patient', phone: '+2548277217095'}, { place: placeId });
 
       const createPatientResponse = await request(CHT.url)
         .post('/api/v1/people')
         .auth(chwUserName, chwPassword)
         .send(patient);
+
       expect(createPatientResponse.status).toBe(200);
       expect(createPatientResponse.body.ok).toEqual(true);
       patientId = createPatientResponse.body.id;
@@ -168,7 +180,7 @@ describe('Workflows', () => {
       );
 
       const searchOpenMrsPatientResponse = await request(OPENMRS.url)
-        .get(`/Patient/?given=OpenMRS&family=Patient`)
+        .get(`/Patient/?given=CHTOpenMRS&family=Patient`)
         .auth(OPENMRS.username, OPENMRS.password);
       expect(searchOpenMrsPatientResponse.status).toBe(200);
       expect(searchOpenMrsPatientResponse.body.total).toBe(1);
@@ -181,7 +193,7 @@ describe('Workflows', () => {
         .auth(FHIR.username, FHIR.password);
       expect(checkMediatorResponse.status).toBe(200);
 
-      const openMrsPatient = OpenMRSPatientFactory.build({}, {placeId});
+      const openMrsPatient = OpenMRSPatientFactory.build({}, {placeId: parentPlace.placeId});
 
       const createOpenMrsPatientResponse = await request(OPENMRS.url)
       .post('/Patient')
@@ -201,7 +213,7 @@ describe('Workflows', () => {
         .send();
       expect(triggerOpenMrsSyncPatientResponse.status).toBe(200);
 
-      await new Promise((r) => setTimeout(r, 10000));
+      await new Promise((r) => setTimeout(r, 20000));
 
       const retrieveFhirPatientIdResponse = await request(FHIR.url)
         .get('/fhir/Patient/?identifier=' + openMrsPatientId)
@@ -216,6 +228,8 @@ describe('Workflows', () => {
         .auth(CHT.username, CHT.password);
       expect(retrieveChtPatientResponse.status).toBe(200);
     });
+
+  });
 
   describe('Loss To Follow-Up (LTFU) workflow', () => {
     let encounterUrl: string;
@@ -263,7 +277,7 @@ describe('Workflows', () => {
       expect(retrieveOrganizationResponse.status).toBe(200);
       expect(retrieveOrganizationResponse.body.total).toBe(1);
 
-      const patient = PatientFactory.build({}, { name: 'LTFU patient', placeId: placeId });
+      const patient = PatientFactory.build({}, { name: 'LTFU patient', place: placeId });
 
       const createPatientResponse = await request(CHT.url)
         .post('/api/v1/people')
@@ -294,7 +308,7 @@ describe('Workflows', () => {
       expect(sendMediatorServiceRequestResponse.status).toBe(201);
       encounterUrl = sendMediatorServiceRequestResponse.body.criteria;
 
-      const taskReport = TaskReportFactory.build({}, { placeId, contactId, patientId });
+      const taskReport = TaskReportFactory.build({}, { placeId: placeId, contactId, patientId });
 
       const submitChtTaskResponse = await request(CHT.url)
         .post('/medic/_bulk_docs')
